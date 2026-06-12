@@ -3,6 +3,7 @@ import cors from "cors";
 import './db/database'
 import 'dotenv/config'
 import authRouter from './routes/auth';
+import usersRouter from "./routes/users";
 const app = express()
 
 app.use(cors({
@@ -10,10 +11,7 @@ app.use(cors({
 }))
 app.use(express.json())
 app.use('/api/auth', authRouter)
-
-// app.get("/", (req, res) => {
-//
-// })
+app.use('/api/users', usersRouter)
 
 
 
