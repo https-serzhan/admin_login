@@ -1,4 +1,8 @@
 import nodemailer from 'nodemailer';
+import dns from 'dns';
+import { isIP } from 'net';
+
+dns.setDefaultResultOrder('ipv4first')
 
 export class MailError extends Error {
     stage: string
@@ -91,10 +95,37 @@ function shouldRetryWithGmailStartTls(smtpConfig: SmtpConfig, err: unknown) {
         (errorCode === 'ETIMEDOUT' || errorMessage.includes('timeout'))
 }
 
+async function resolveSmtpConnectionHost(host: string) {
+    if(isIP(host)){
+        return host
+    }
+
+    try {
+        const addresses = await dns.promises.resolve4(host)
+        const connectionHost = addresses[0]
+
+        if(connectionHost){
+            console.log('Resolved SMTP host to IPv4', {
+                host,
+                connectionHost,
+            })
+            return connectionHost
+        }
+    }
+    catch(err) {
+        console.error('SMTP IPv4 lookup failed, falling back to hostname', getErrorDetails(err))
+    }
+
+    return host
+}
+
 async function sendVerificationEmailWithSmtp(smtpConfig: SmtpConfig, to: string, verificationLink: string) {
+    const connectionHost = await resolveSmtpConnectionHost(smtpConfig.host)
+
     console.log('Preparing verification email', {
         to,
         smtpHost: smtpConfig.host,
+        smtpConnectionHost: connectionHost,
         smtpPort: smtpConfig.port,
         smtpSecure: smtpConfig.secure,
         smtpUser: smtpConfig.user,
@@ -102,7 +133,7 @@ async function sendVerificationEmailWithSmtp(smtpConfig: SmtpConfig, to: string,
         appUrl: process.env.APP_URL,
     })
     const transporter = nodemailer.createTransport({
-        host: smtpConfig.host,
+        host: connectionHost,
         port: smtpConfig.port,
         secure: smtpConfig.secure,
         requireTLS: !smtpConfig.secure,
@@ -112,6 +143,9 @@ async function sendVerificationEmailWithSmtp(smtpConfig: SmtpConfig, to: string,
         auth: {
             user: smtpConfig.user,
             pass: smtpConfig.pass,
+        },
+        tls: {
+            servername: smtpConfig.host,
         },
     });
 
