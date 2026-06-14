@@ -30,11 +30,7 @@ export default function RegisterForm({onAuthSuccess}: RegisterFormProps) {
     const registerMutation = useMutation({mutationFn: (vals: RegisterValues) => {
             return register(vals.name, vals.email, vals.password);
         }, onSuccess: (response) => {
-            if (response.verificationEmailSent === false) {
-                toast.error('Email delivery failed. Use the verification link shown after login.')
-            } else {
-                toast.success('Account created successfully')
-            }
+            toast.success('Account created successfully')
             onAuthSuccess(response)
         }, onError: (error) => {
             toast.error(error.message)
@@ -70,4 +66,3 @@ export default function RegisterForm({onAuthSuccess}: RegisterFormProps) {
         </form>
     )
 }
-
