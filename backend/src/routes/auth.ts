@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken'
 import {compare, hash} from 'bcrypt'
 import db from "../db/database";
 import crypto from "crypto";
-import {sendVerificationEmail} from '../services/mail'
+import {MailError, sendVerificationEmail} from '../services/mail'
 import authMiddleware from "../middleware/auth";
 
 type UserStatus = 'unverified' | 'active' | 'blocked'
@@ -67,6 +67,15 @@ function buildAuthResponse(user: AuthResponseUser): AuthResponse {
 
 function sendVerificationEmailInBackground(email: string, token: string) {
     sendVerificationEmail(email, token).catch((err) => {
+        if(err instanceof MailError){
+            console.error('Failed to send verification email:', {
+                message: err.message,
+                stage: err.stage,
+                details: err.details,
+            })
+            return
+        }
+
         console.error('Failed to send verification email:', err)
     })
 }
@@ -153,8 +162,23 @@ authRouter.post('/resend-verification', authMiddleware, async (req: Request, res
         return res.status(200).json({message: 'Verification email sent'})
     }
     catch(err){
+        if(err instanceof MailError){
+            console.error('Failed to resend verification email:', {
+                message: err.message,
+                stage: err.stage,
+                details: err.details,
+            })
+            return res.status(500).json({
+                message: err.message,
+                stage: err.stage,
+                details: err.details,
+            })
+        }
+
         console.error('Failed to resend verification email:', err)
-        return res.status(500).send('Failed to send verification email')
+        return res.status(500).json({
+            message: 'Failed to send verification email',
+        })
     }
 })
 
