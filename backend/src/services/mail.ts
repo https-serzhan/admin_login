@@ -31,9 +31,27 @@ function getErrorDetails(err: unknown) {
     }
 }
 
+function getEnvValue(key: string) {
+    const value = process.env[key]
+
+    if(!value){
+        return ''
+    }
+
+    return value.trim().replace(/^['"]|['"]$/g, '')
+}
+
 function getSmtpConfig() {
-    const requiredVars = ['SMTP_HOST', 'SMTP_PORT', 'SMTP_USER', 'SMTP_PASS']
-    const missingVars = requiredVars.filter((key) => !process.env[key])
+    const smtpHost = getEnvValue('SMTP_HOST')
+    const smtpPort = getEnvValue('SMTP_PORT')
+    const smtpUser = getEnvValue('SMTP_USER')
+    const smtpPass = getEnvValue('SMTP_PASS').replace(/\s/g, '')
+    const missingVars = [
+        !smtpHost && 'SMTP_HOST',
+        !smtpPort && 'SMTP_PORT',
+        !smtpUser && 'SMTP_USER',
+        !smtpPass && 'SMTP_PASS',
+    ].filter(Boolean)
 
     if (missingVars.length > 0) {
         throw new MailError(`Missing SMTP env vars: ${missingVars.join(', ')}`, 'config', {
@@ -42,11 +60,12 @@ function getSmtpConfig() {
     }
 
     return {
-        host: process.env.SMTP_HOST,
-        port: Number(process.env.SMTP_PORT),
-        secure: process.env.SMTP_SECURE === 'true',
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
+        host: smtpHost,
+        port: Number(smtpPort),
+        secure: getEnvValue('SMTP_SECURE') === 'true',
+        user: smtpUser,
+        pass: smtpPass,
+        from: getEnvValue('SMTP_FROM') || smtpUser,
     }
 }
 
@@ -64,6 +83,7 @@ export async function sendVerificationEmail(to: string, token: string) {
         smtpPort: smtpConfig.port,
         smtpSecure: smtpConfig.secure,
         smtpUser: smtpConfig.user,
+        smtpFrom: smtpConfig.from,
         appUrl: process.env.APP_URL,
     })
     const transporter = nodemailer.createTransport({
@@ -93,10 +113,11 @@ export async function sendVerificationEmail(to: string, token: string) {
     try {
         console.log('Sending verification email', {
             to,
+            from: smtpConfig.from,
             verificationLink,
         })
         info = await transporter.sendMail({
-            from: smtpConfig.user,
+            from: smtpConfig.from,
             to,
             subject: 'Verify your email',
             text: `Verify your email by opening this link: ${verificationLink}`,

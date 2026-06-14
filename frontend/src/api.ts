@@ -17,13 +17,34 @@ type MessageResponse = {
 
 export class ApiError extends Error {
     status : number
+    details: unknown
 
-    constructor(status: number, message: string) {
+    constructor(status: number, message: string, details?: unknown) {
         super(message);
         this.status = status;
+        this.details = details;
     }
 }
 
+function getApiErrorMessage(data: unknown) {
+    if(typeof data === 'string'){
+        return data
+    }
+    if(data && typeof data === 'object' && 'message' in data){
+        const errorData = data as {message: unknown, stage?: unknown, details?: unknown}
+        const details = errorData.details && typeof errorData.details === 'object'
+            ? errorData.details as {message?: unknown, response?: unknown, code?: unknown, responseCode?: unknown}
+            : null
+        const detailMessage = details?.response || details?.message || details?.code || details?.responseCode
+
+        return [errorData.message, errorData.stage && `stage: ${errorData.stage}`, detailMessage]
+            .filter(Boolean)
+            .map(String)
+            .join(' | ')
+    }
+
+    return 'Request failed'
+}
 
 export async function apiRequest<T>(path: string, options: ApiOptions = {}): Promise<T> {
     const token = localStorage.getItem('token');
@@ -50,14 +71,7 @@ export async function apiRequest<T>(path: string, options: ApiOptions = {}): Pro
             localStorage.removeItem('token');
             localStorage.removeItem('user');
         }
-        const message =
-            typeof data === 'string'
-                ? data
-                : data && typeof data === 'object' && 'message' in data
-                    ? String(data.message)
-                    : 'Request failed'
-
-        throw new ApiError(response.status, message)
+        throw new ApiError(response.status, getApiErrorMessage(data), data)
     }
     return data as T
 }
@@ -111,7 +125,6 @@ export function deleteUnverifiedUsers() {
         method: 'DELETE',
     })
 }
-
 
 
 
