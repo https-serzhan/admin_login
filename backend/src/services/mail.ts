@@ -155,7 +155,13 @@ async function sendVerificationEmailWithSmtp(smtpConfig: SmtpConfig, to: string,
         console.log('SMTP connection verified')
     }
     catch(err) {
-        const details = getErrorDetails(err)
+        const details = {
+            ...getErrorDetails(err),
+            smtpHost: smtpConfig.host,
+            smtpConnectionHost: connectionHost,
+            smtpPort: smtpConfig.port,
+            smtpSecure: smtpConfig.secure,
+        }
         console.error('SMTP connection verification failed', details)
         throw new MailError('SMTP connection failed', 'verify', details)
     }
@@ -177,7 +183,13 @@ async function sendVerificationEmailWithSmtp(smtpConfig: SmtpConfig, to: string,
         });
     }
     catch(err) {
-        const details = getErrorDetails(err)
+        const details = {
+            ...getErrorDetails(err),
+            smtpHost: smtpConfig.host,
+            smtpConnectionHost: connectionHost,
+            smtpPort: smtpConfig.port,
+            smtpSecure: smtpConfig.secure,
+        }
         console.error('Verification email send failed', details)
         throw new MailError('Verification email send failed', 'send', details)
     }

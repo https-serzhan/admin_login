@@ -33,11 +33,14 @@ function getApiErrorMessage(data: unknown) {
     if(data && typeof data === 'object' && 'message' in data){
         const errorData = data as {message: unknown, stage?: unknown, details?: unknown}
         const details = errorData.details && typeof errorData.details === 'object'
-            ? errorData.details as {message?: unknown, response?: unknown, code?: unknown, responseCode?: unknown}
+            ? errorData.details as {message?: unknown, response?: unknown, code?: unknown, responseCode?: unknown, smtpConnectionHost?: unknown, smtpPort?: unknown}
             : null
         const detailMessage = details?.response || details?.message || details?.code || details?.responseCode
+        const smtpTarget = details?.smtpConnectionHost && details?.smtpPort
+            ? `target: ${details.smtpConnectionHost}:${details.smtpPort}`
+            : null
 
-        return [errorData.message, errorData.stage && `stage: ${errorData.stage}`, detailMessage]
+        return [errorData.message, errorData.stage && `stage: ${errorData.stage}`, detailMessage, smtpTarget]
             .filter(Boolean)
             .map(String)
             .join(' | ')
@@ -125,6 +128,5 @@ export function deleteUnverifiedUsers() {
         method: 'DELETE',
     })
 }
-
 
 
