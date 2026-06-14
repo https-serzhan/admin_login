@@ -69,14 +69,29 @@ function getSmtpConfig() {
     }
 }
 
+type SmtpConfig = ReturnType<typeof getSmtpConfig>
+
 export function buildVerificationLink(token: string) {
     const appUrl = process.env.APP_URL || 'http://localhost:3001'
 
     return `${appUrl}/api/auth/verify-email/${token}`
 }
 
-export async function sendVerificationEmail(to: string, token: string) {
-    const smtpConfig = getSmtpConfig()
+function shouldRetryWithGmailStartTls(smtpConfig: SmtpConfig, err: unknown) {
+    if(!(err instanceof MailError)){
+        return false
+    }
+
+    const errorCode = String(err.details.code || '')
+    const errorMessage = String(err.details.message || '').toLowerCase()
+
+    return smtpConfig.host === 'smtp.gmail.com' &&
+        smtpConfig.port === 465 &&
+        err.stage === 'verify' &&
+        (errorCode === 'ETIMEDOUT' || errorMessage.includes('timeout'))
+}
+
+async function sendVerificationEmailWithSmtp(smtpConfig: SmtpConfig, to: string, verificationLink: string) {
     console.log('Preparing verification email', {
         to,
         smtpHost: smtpConfig.host,
@@ -90,12 +105,15 @@ export async function sendVerificationEmail(to: string, token: string) {
         host: smtpConfig.host,
         port: smtpConfig.port,
         secure: smtpConfig.secure,
+        requireTLS: !smtpConfig.secure,
+        connectionTimeout: 15000,
+        greetingTimeout: 15000,
+        socketTimeout: 20000,
         auth: {
             user: smtpConfig.user,
             pass: smtpConfig.pass,
         },
     });
-    const verificationLink = buildVerificationLink(token)
 
     try {
         console.log('Verifying SMTP connection')
@@ -143,5 +161,28 @@ export async function sendVerificationEmail(to: string, token: string) {
             rejected: info.rejected,
             response: info.response,
         })
+    }
+}
+
+export async function sendVerificationEmail(to: string, token: string) {
+    const smtpConfig = getSmtpConfig()
+    const verificationLink = buildVerificationLink(token)
+
+    try {
+        await sendVerificationEmailWithSmtp(smtpConfig, to, verificationLink)
+    }
+    catch(err) {
+        if(!shouldRetryWithGmailStartTls(smtpConfig, err)){
+            throw err
+        }
+
+        const fallbackConfig = {
+            ...smtpConfig,
+            port: 587,
+            secure: false,
+        }
+
+        console.warn('SMTP 465 timed out, retrying Gmail with STARTTLS on port 587')
+        await sendVerificationEmailWithSmtp(fallbackConfig, to, verificationLink)
     }
 }
