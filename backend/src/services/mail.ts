@@ -17,7 +17,7 @@ export class MailError extends Error {
     }
 }
 
-type MailProvider = 'smtp' | 'resend'
+type MailProvider = 'gmail' | 'smtp' | 'resend'
 
 type EmailResponseBody = Record<string, unknown> | string | null
 
@@ -72,9 +72,9 @@ function getEnvValue(key: string) {
 }
 
 function getMailProvider(): MailProvider {
-    const provider = getEnvValue('MAIL_PROVIDER') || 'smtp'
+    const provider = getEnvValue('MAIL_PROVIDER') || 'gmail'
 
-    if(provider !== 'smtp' && provider !== 'resend'){
+    if(provider !== 'gmail' && provider !== 'smtp' && provider !== 'resend'){
         throw new MailError(`Unsupported mail provider: ${provider}`, 'config', {
             provider,
         })
@@ -82,6 +82,37 @@ function getMailProvider(): MailProvider {
 
     return provider
 }
+
+function getGmailConfig() {
+    const clientId = getEnvValue('GMAIL_CLIENT_ID')
+    const clientSecret = getEnvValue('GMAIL_CLIENT_SECRET')
+    const refreshToken = getEnvValue('GMAIL_REFRESH_TOKEN')
+    const from = getEnvValue('GMAIL_FROM')
+    const missingVars = [
+        !clientId && 'GMAIL_CLIENT_ID',
+        !clientSecret && 'GMAIL_CLIENT_SECRET',
+        !refreshToken && 'GMAIL_REFRESH_TOKEN',
+        !from && 'GMAIL_FROM',
+    ].filter(Boolean)
+
+    if (missingVars.length > 0) {
+        throw new MailError(`Missing Gmail env vars: ${missingVars.join(', ')}`, 'config', {
+            provider: 'gmail',
+            missingVars,
+        })
+    }
+
+    return {
+        clientId,
+        clientSecret,
+        refreshToken,
+        from,
+        tokenUrl: getEnvValue('GMAIL_TOKEN_URL') || 'https://oauth2.googleapis.com/token',
+        sendUrl: getEnvValue('GMAIL_SEND_URL') || 'https://gmail.googleapis.com/gmail/v1/users/me/messages/send',
+    }
+}
+
+type GmailConfig = ReturnType<typeof getGmailConfig>
 
 function getSmtpConfig() {
     const host = getEnvValue('SMTP_HOST')
@@ -364,6 +395,14 @@ function dotStuffMessage(message: string) {
         .join('\r\n')
 }
 
+function toBase64Url(value: string) {
+    return Buffer.from(value)
+        .toString('base64')
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=+$/g, '')
+}
+
 async function resolveSmtpConnectionHost(host: string) {
     if(net.isIP(host)){
         return host
@@ -571,6 +610,113 @@ async function readEmailResponse(response: Response): Promise<EmailResponseBody>
     }
 }
 
+async function getGmailAccessToken(gmailConfig: GmailConfig) {
+    let response: Response
+
+    try {
+        response = await fetch(gmailConfig.tokenUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: new URLSearchParams({
+                client_id: gmailConfig.clientId,
+                client_secret: gmailConfig.clientSecret,
+                refresh_token: gmailConfig.refreshToken,
+                grant_type: 'refresh_token',
+            }),
+        })
+    }
+    catch(err) {
+        const details = {
+            provider: 'gmail',
+            ...getErrorDetails(err),
+        }
+        console.error('Gmail token request failed', details)
+        throw new MailError('Gmail token request failed', 'auth', details)
+    }
+
+    const responseBody = await readEmailResponse(response)
+
+    if(!response.ok){
+        const details = {
+            provider: 'gmail',
+            status: response.status,
+            statusText: response.statusText,
+            response: responseBody,
+        }
+        console.error('Gmail token request failed', details)
+        throw new MailError('Gmail token request failed', 'auth', details)
+    }
+
+    if(!responseBody || typeof responseBody !== 'object' || typeof responseBody.access_token !== 'string'){
+        const details = {
+            provider: 'gmail',
+            response: responseBody,
+        }
+        console.error('Gmail token response missing access token', details)
+        throw new MailError('Gmail token response missing access token', 'auth', details)
+    }
+
+    return responseBody.access_token
+}
+
+async function sendVerificationEmailWithGmail(gmailConfig: GmailConfig, to: string, verificationLink: string) {
+    const content = buildVerificationEmailContent(verificationLink)
+    const message = buildSmtpMessage(gmailConfig.from, to, content)
+    const accessToken = await getGmailAccessToken(gmailConfig)
+    const payload = {
+        raw: toBase64Url(message),
+    }
+
+    console.log('Sending verification email with Gmail API', {
+        provider: 'gmail',
+        to,
+        from: gmailConfig.from,
+        appUrl: process.env.APP_URL,
+    })
+
+    let response: Response
+
+    try {
+        response = await fetch(gmailConfig.sendUrl, {
+            method: 'POST',
+            headers: {
+                Authorization: `Bearer ${accessToken}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(payload),
+        })
+    }
+    catch(err) {
+        const details = {
+            provider: 'gmail',
+            ...getErrorDetails(err),
+        }
+        console.error('Gmail email send failed', details)
+        throw new MailError('Gmail email send failed', 'send', details)
+    }
+
+    const responseBody = await readEmailResponse(response)
+
+    if(!response.ok){
+        const details = {
+            provider: 'gmail',
+            status: response.status,
+            statusText: response.statusText,
+            response: responseBody,
+        }
+        console.error('Gmail email send failed', details)
+        throw new MailError('Gmail email send failed', 'send', details)
+    }
+
+    console.log('Verification email sent with Gmail API', {
+        provider: 'gmail',
+        status: response.status,
+        response: responseBody,
+    })
+}
+
 async function sendVerificationEmailWithResend(resendConfig: ResendConfig, to: string, verificationLink: string) {
     const content = buildVerificationEmailContent(verificationLink)
     const payload = {
@@ -633,6 +779,11 @@ async function sendVerificationEmailWithResend(resendConfig: ResendConfig, to: s
 export async function sendVerificationEmail(to: string, token: string) {
     const provider = getMailProvider()
     const verificationLink = buildVerificationLink(token)
+
+    if(provider === 'gmail'){
+        await sendVerificationEmailWithGmail(getGmailConfig(), to, verificationLink)
+        return
+    }
 
     if(provider === 'resend'){
         await sendVerificationEmailWithResend(getResendConfig(), to, verificationLink)
