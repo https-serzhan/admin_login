@@ -7,6 +7,16 @@ Content-Type: application/json
   "password": "123"
 }
 
+### Test - second user register
+POST http://localhost:3001/api/auth/register
+Content-Type: application/json
+
+{
+"name": "Test User 3",
+"email": "230103179@sdu.edu.kz",
+"password": "1234"
+}
+
 
 ### Login - success
 POST http://localhost:3001/api/auth/login
@@ -57,11 +67,11 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiZW1haWwiO
 
 ### Test - block users array
 POST http://localhost:3001/api/users/block
-Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiZW1haWwiOiJ0ZXN0QGdtYWlsLmNvbSIsImlhdCI6MTc4MTI4OTgzNCwiZXhwIjoxNzgxMzc2MjM0fQ.QRfDZ9YKPxUQ5oNkHRVKX28Qlx1YztbAUzD8L7QTS6w
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiZW1haWwiOiJ0ZXN0QGdtYWlsLmNvbSIsImlhdCI6MTc4MTM0Mjc4MywiZXhwIjoxNzgxNDI5MTgzfQ.29ek85W7QVG5orqHRsh6bmcMtMuPjyovN5G3eFuiGjU
 Content-Type: application/json
 
 {
-  "ids": [1]
+  "ids": [3]
 }
 
 ### Test - Invalid body
@@ -72,6 +82,33 @@ Content-Type: application/json
 {
 "ids": []
 }
+
+### Test - Unblock
+POST http://localhost:3001/api/users/unblock
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiZW1haWwiOiJ0ZXN0QGdtYWlsLmNvbSIsImlhdCI6MTc4MTM0Mjc4MywiZXhwIjoxNzgxNDI5MTgzfQ.29ek85W7QVG5orqHRsh6bmcMtMuPjyovN5G3eFuiGjU
+Content-Type: application/json
+
+{
+"ids": [3]
+}
+
+### Test - deleting the second user
+DELETE http://localhost:3001/api/users
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiZW1haWwiOiJ0ZXN0QGdtYWlsLmNvbSIsImlhdCI6MTc4MTM0Mjc4MywiZXhwIjoxNzgxNDI5MTgzfQ.29ek85W7QVG5orqHRsh6bmcMtMuPjyovN5G3eFuiGjU
+Content-Type: application/json
+
+{
+"ids": [3]
+}
+
+
+
+
+
+
+
+
+
 
 
 

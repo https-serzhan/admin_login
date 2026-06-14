@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken'
 import {compare, hash} from 'bcrypt'
 import db from "../db/database";
 import crypto from "crypto";
-import authMiddleware from "../middleware/auth";
+import {sendVerificationEmail} from '../services/mail'
 
 type UserStatus = 'unverified' | 'active' | 'blocked'
 interface InsertUser {
@@ -62,6 +62,9 @@ authRouter.post('/register', async (req: Request, res: Response) => {
             values (@name , @email, @password_hash, @email_token )`);
         const result = insertUser.run(newUser)
         const registeredUserId = Number(result.lastInsertRowid);
+        sendVerificationEmail(email, newUser.email_token).catch((err) => {
+            console.error('Failed to send verification email:', err);
+        });
         const authTokenPayload: AuthTokenPayload = {
             id: registeredUserId,
             email
@@ -131,8 +134,28 @@ authRouter.post('/login', async (req: Request, res: Response) => {
     }
 })
 
-authRouter.get('/me-test', authMiddleware, (req: Request, res: Response) => {
-    return res.status(200).json((req as any).user);
-});
+authRouter.get('/verify-email/:token', (req: Request, res: Response) => {
+    try {
+        const token = req.params.token;
+        if (!token) {
+            return res.status(400).send('All fields are required')
+        }
+        const findUser = db.prepare(`select * from users where email_token=?`);
+        const result = findUser.get(token) as DBUser | undefined;
+        if(!result){
+            return res.status(400).send('Invalid verification token')
+        }
+        if(result.status === 'blocked'){
+            return res.status(403).send('Account is blocked')
+        }
+        const activateUser = db.prepare(`update users set status = 'active', email_token = NULL where id=?`);
+        activateUser.run(result.id)
+        return res.status(200).json({message: "Email verified successfully"});
+    }
+    catch(err){
+        console.log(err)
+        return res.status(500).send('Server Error')
+    }
+})
 
 export default authRouter;
