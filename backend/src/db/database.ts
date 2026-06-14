@@ -11,7 +11,6 @@ if (databaseDir !== '.') {
 
 const db = new Database(databaseFile)
 
-//Important: unique index is on email, so the user cant use the same email
 function initializeDatabase() {
     db.exec(`
         CREATE TABLE IF NOT EXISTS users
