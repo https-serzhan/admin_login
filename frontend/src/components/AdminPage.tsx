@@ -1,6 +1,6 @@
 import type {AuthResponseUser} from "../types.ts";
 import {useQuery, useMutation, useQueryClient} from "@tanstack/react-query";
-import {getUsers, blockUsers, unblockUsers, deleteUsers, deleteUnverifiedUsers, ApiError} from "../api.ts";
+import {getUsers, blockUsers, unblockUsers, deleteUsers, deleteUnverifiedUsers, resendVerificationEmail, ApiError} from "../api.ts";
 import UsersTable from "./UsersTable";
 import {useState, useEffect} from "react";
 import UsersToolbar from "./UsersToolbar.tsx";
@@ -48,6 +48,13 @@ export default function AdminPage({user, onLogout}: AdminPageProps) {
         onSuccess: handleMutationSuccess,
         onError: handleMutationError
     })
+    const resendVerificationMutation = useMutation({
+        mutationFn: resendVerificationEmail,
+        onSuccess: () => {
+            toast.success('Verification email sent')
+        },
+        onError: handleMutationError
+    })
     function handleBlock() {
         blockMutation.mutate(selectedIds)
     }
@@ -62,6 +69,9 @@ export default function AdminPage({user, onLogout}: AdminPageProps) {
 
     function handleDeleteUnverified() {
         deleteUnverifiedMutation.mutate()
+    }
+    function handleResendVerification() {
+        resendVerificationMutation.mutate()
     }
     const isActionPending =
         blockMutation.isPending ||
@@ -111,6 +121,9 @@ export default function AdminPage({user, onLogout}: AdminPageProps) {
                 <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
                     <p className="font-medium">This account is still unverified.</p>
                     <p className="mt-1">Registration is complete. Check your inbox and spam folder for the verification email.</p>
+                    <button className="mt-3 rounded-md bg-blue-600 px-3 py-2 font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500" disabled={resendVerificationMutation.isPending} onClick={handleResendVerification}>
+                        {resendVerificationMutation.isPending ? 'Sending...' : 'Resend verification email'}
+                    </button>
                 </div>
             )}
             <UsersToolbar selectedCount={selectedIds.length} onBlock={handleBlock}
@@ -129,4 +142,3 @@ export default function AdminPage({user, onLogout}: AdminPageProps) {
         </div>
     )
 }
-

@@ -11,6 +11,10 @@ type ActionResponse = {
     affectedRows: number
 }
 
+type MessageResponse = {
+    message: string
+}
+
 export class ApiError extends Error {
     status : number
 
@@ -72,6 +76,12 @@ export function register(name: string, email: string, password: string) {
     })
 }
 
+export function resendVerificationEmail() {
+    return apiRequest<MessageResponse>('/auth/resend-verification', {
+        method: 'POST',
+    })
+}
+
 export function getUsers() {
     return apiRequest<User[]>('/users')
 }
@@ -101,7 +111,6 @@ export function deleteUnverifiedUsers() {
         method: 'DELETE',
     })
 }
-
 
 
 

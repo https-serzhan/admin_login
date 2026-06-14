@@ -4,6 +4,7 @@ import {compare, hash} from 'bcrypt'
 import db from "../db/database";
 import crypto from "crypto";
 import {sendVerificationEmail} from '../services/mail'
+import authMiddleware from "../middleware/auth";
 
 type UserStatus = 'unverified' | 'active' | 'blocked'
 interface InsertUser {
@@ -134,6 +135,27 @@ authRouter.post('/register', async (req: Request, res: Response) => {
         return res.status(500).send('Server Error')
     }
 
+})
+
+authRouter.post('/resend-verification', authMiddleware, async (req: Request, res: Response) => {
+    try {
+        const user = (req as any).user as AuthResponseUser
+
+        if(user.status === 'active'){
+            return res.status(409).send('Account is already verified')
+        }
+
+        const emailToken = crypto.randomBytes(16).toString('hex')
+        const updateUser = db.prepare(`update users set email_token = ? where id = ?`)
+        updateUser.run(emailToken, user.id)
+
+        await sendVerificationEmail(user.email, emailToken)
+        return res.status(200).json({message: 'Verification email sent'})
+    }
+    catch(err){
+        console.error('Failed to resend verification email:', err)
+        return res.status(500).send('Failed to send verification email')
+    }
 })
 
 authRouter.post('/login', async (req: Request, res: Response) => {
