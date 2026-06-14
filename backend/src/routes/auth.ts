@@ -43,12 +43,31 @@ interface AuthResponse {
 }
 
 const authRouter = Router()
+
 function getJwtSecret() {
     const secret = process.env.JWT_SECRET
     if (!secret) {
         throw new Error('JWT_SECRET is required')
     }
     return secret
+}
+
+function buildAuthResponse(user: AuthResponseUser): AuthResponse {
+    const authTokenPayload: AuthTokenPayload = {
+        id: user.id,
+        email: user.email
+    }
+
+    return {
+        token: jwt.sign(authTokenPayload, getJwtSecret(), {expiresIn: '24h'}),
+        user,
+    }
+}
+
+function sendVerificationEmailInBackground(email: string, token: string) {
+    sendVerificationEmail(email, token).catch((err) => {
+        console.error('Failed to send verification email:', err)
+    })
 }
 
 authRouter.post('/register', async (req: Request, res: Response) => {
@@ -69,11 +88,6 @@ authRouter.post('/register', async (req: Request, res: Response) => {
             values (@name , @email, @password_hash, @email_token )`);
         const result = insertUser.run(newUser)
         const registeredUserId = Number(result.lastInsertRowid);
-        await sendVerificationEmail(email, newUser.email_token)
-        const authTokenPayload: AuthTokenPayload = {
-            id: registeredUserId,
-            email
-        }
         const user: AuthResponseUser = {
             id: registeredUserId,
             name,
@@ -81,55 +95,41 @@ authRouter.post('/register', async (req: Request, res: Response) => {
             status: 'unverified',
             last_login_at: null,
         }
-        const authResponse: AuthResponse = {
-            token:jwt.sign(authTokenPayload, getJwtSecret(), {expiresIn: '24h'}),
-            user,
-        }
-        return res.status(200).json(authResponse)
+        sendVerificationEmailInBackground(email, newUser.email_token)
+        return res.status(200).json(buildAuthResponse(user))
     }
     catch(err: any){
         console.error(err)
         if(err.message.includes('UNIQUE constraint failed: users.email')){
-            try {
-                const { name, email, password } = req.body
-                const getUser = db.prepare(`select * from users where email=?`)
-                const existingUser = getUser.get(email) as DBUser | undefined
+            const { name, email, password } = req.body
+            const getUser = db.prepare(`select * from users where email=?`)
+            const existingUser = getUser.get(email) as DBUser | undefined
 
-                if(!existingUser){
-                    return res.status(409).send('User already exists')
-                }
-                if(existingUser.status === 'active'){
-                    return res.status(409).send('User already exists')
-                }
-                if(existingUser.status === 'blocked'){
-                    return res.status(403).send('Account is blocked')
-                }
-                const emailToken = crypto.randomBytes(16).toString('hex')
-                const passwordHash = await hash(password, 10)
-                const updateUser = db.prepare(`update users set name = ?, password_hash = ?, email_token = ? where id = ?`)
-                updateUser.run(name, passwordHash, emailToken, existingUser.id)
-                await sendVerificationEmail(email, emailToken)
-                const authTokenPayload: AuthTokenPayload = {
-                    id: existingUser.id,
-                    email
-                }
-                const user: AuthResponseUser = {
-                    id: existingUser.id,
-                    name,
-                    email,
-                    status: 'unverified',
-                    last_login_at: existingUser.last_login_at,
-                }
-                const authResponse: AuthResponse = {
-                    token:jwt.sign(authTokenPayload, getJwtSecret(), {expiresIn: '24h'}),
-                    user,
-                }
-                return res.status(200).json(authResponse)
+            if(!existingUser){
+                return res.status(409).send('User already exists')
             }
-            catch(emailErr){
-                console.error('Failed to send verification email:', emailErr)
-                return res.status(500).send('Failed to send verification email')
+            if(existingUser.status === 'active'){
+                return res.status(409).send('User already exists')
             }
+            if(existingUser.status === 'blocked'){
+                return res.status(403).send('Account is blocked')
+            }
+
+            const emailToken = crypto.randomBytes(16).toString('hex')
+            const passwordHash = await hash(password, 10)
+            const updateUser = db.prepare(`update users set name = ?, password_hash = ?, email_token = ? where id = ?`)
+            updateUser.run(name, passwordHash, emailToken, existingUser.id)
+
+            const user: AuthResponseUser = {
+                id: existingUser.id,
+                name,
+                email,
+                status: 'unverified',
+                last_login_at: existingUser.last_login_at,
+            }
+
+            sendVerificationEmailInBackground(email, emailToken)
+            return res.status(200).json(buildAuthResponse(user))
         }
         return res.status(500).send('Server Error')
     }
