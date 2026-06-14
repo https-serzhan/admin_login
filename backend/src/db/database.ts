@@ -1,6 +1,15 @@
 import Database from 'better-sqlite3'
+import fs from 'fs'
+import path from 'path'
 
-const db = new Database('users.db')
+const databaseFile = process.env.DB_FILE || 'users.db'
+const databaseDir = path.dirname(databaseFile)
+
+if (databaseDir !== '.') {
+    fs.mkdirSync(databaseDir, {recursive: true})
+}
+
+const db = new Database(databaseFile)
 
 //Important: unique index is on email, so the user cant use the same email
 function initializeDatabase() {

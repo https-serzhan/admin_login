@@ -58,7 +58,7 @@ usersRouter.post('/unblock', authMiddleware, (req, res) => {
             return res.status(400).send('Invalid user ids');
         }
         const placeholders = ids.map(() => '?').join(', ');
-        const unblockUsers = db.prepare(`UPDATE users SET status ='active' WHERE id IN (${placeholders})`);
+        const unblockUsers = db.prepare(`UPDATE users SET status ='active' WHERE id IN (${placeholders}) AND status = 'blocked'`);
         const updateResults = unblockUsers.run(...ids);
         return res.status(200).json({message:"Users unblocked successfully", affectedRows:updateResults.changes});
     }

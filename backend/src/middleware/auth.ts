@@ -14,6 +14,14 @@ type UserDB = {
     status: 'unverified' | 'active' | 'blocked'
 }
 
+function getJwtSecret() {
+    const secret = process.env.JWT_SECRET
+    if (!secret) {
+        throw new Error('JWT_SECRET is required')
+    }
+    return secret
+}
+
 function authMiddleware(req: Request, res: Response, next: NextFunction){
     try{
         const authHeader = req.headers['authorization'];
@@ -24,7 +32,7 @@ function authMiddleware(req: Request, res: Response, next: NextFunction){
         if(!token){
             return res.status(401).send('Token is missing');
         }
-        const decodedToken = jwt.verify(token, process.env.JWT_SECRET || 'fallback_secret')
+        const decodedToken = jwt.verify(token, getJwtSecret())
         const authPayload = decodedToken as AuthTokenPayload;
         const userId = authPayload.id;
         if(typeof userId !== 'number' || userId <= 0){

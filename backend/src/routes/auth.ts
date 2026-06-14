@@ -43,6 +43,13 @@ interface AuthResponse {
 }
 
 const authRouter = Router()
+function getJwtSecret() {
+    const secret = process.env.JWT_SECRET
+    if (!secret) {
+        throw new Error('JWT_SECRET is required')
+    }
+    return secret
+}
 
 authRouter.post('/register', async (req: Request, res: Response) => {
     try{
@@ -77,7 +84,7 @@ authRouter.post('/register', async (req: Request, res: Response) => {
             last_login_at: null,
         }
         const authResponse: AuthResponse = {
-            token:jwt.sign(authTokenPayload, process.env.JWT_SECRET || 'fallback_secret', {expiresIn: '24h'}),
+            token:jwt.sign(authTokenPayload, getJwtSecret(), {expiresIn: '24h'}),
             user,
         }
         return res.status(200).json(authResponse)
@@ -123,7 +130,7 @@ authRouter.post('/login', async (req: Request, res: Response) => {
         };
         const authTokenPayload: AuthTokenPayload = {id: result.id, email: result.email};
         const authResponse: AuthResponse = {
-            token: jwt.sign(authTokenPayload, process.env.JWT_SECRET || 'fallback_secret', {expiresIn: '24h'}),
+            token: jwt.sign(authTokenPayload, getJwtSecret(), {expiresIn: '24h'}),
             user,
         }
         return res.status(200).json(authResponse);

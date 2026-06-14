@@ -1,6 +1,6 @@
 import type { AuthResponse, User } from './types'
 
-const API_BASE = import.meta.env.VITE_API_URL
+const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3001/api').replace(/\/$/, '')
 
 type ApiOptions = RequestInit & {
     body?: BodyInit | null,
@@ -101,7 +101,6 @@ export function deleteUnverifiedUsers() {
         method: 'DELETE',
     })
 }
-
 
 
 

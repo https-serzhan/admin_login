@@ -11,7 +11,13 @@ function App() {
             return null
         }
 
-        return JSON.parse(savedUser) as AuthResponseUser
+        try {
+            return JSON.parse(savedUser) as AuthResponseUser
+        } catch {
+            localStorage.removeItem('user')
+            localStorage.removeItem('token')
+            return null
+        }
     })
     function handleAuthSuccess(response: AuthResponse) {
         localStorage.setItem('token', response.token);
