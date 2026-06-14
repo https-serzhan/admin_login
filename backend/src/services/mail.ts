@@ -17,6 +17,12 @@ function getSmtpConfig() {
     }
 }
 
+export function buildVerificationLink(token: string) {
+    const appUrl = process.env.APP_URL || 'http://localhost:3001'
+
+    return `${appUrl}/api/auth/verify-email/${token}`
+}
+
 export async function sendVerificationEmail(to: string, token: string) {
     const smtpConfig = getSmtpConfig()
     const transporter = nodemailer.createTransport({
@@ -28,8 +34,7 @@ export async function sendVerificationEmail(to: string, token: string) {
             pass: smtpConfig.pass,
         },
     });
-    const appUrl = process.env.APP_URL || 'http://localhost:3001';
-    const verificationLink = `${appUrl}/api/auth/verify-email/${token}`;
+    const verificationLink = buildVerificationLink(token)
 
     const info = await transporter.sendMail({
         from: smtpConfig.user,

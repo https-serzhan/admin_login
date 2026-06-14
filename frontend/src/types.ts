@@ -20,4 +20,6 @@ export type AuthResponseUser = {
 export type AuthResponse = {
     token: string,
     user: AuthResponseUser
+    verificationEmailSent?: boolean
+    verificationLink?: string
 }

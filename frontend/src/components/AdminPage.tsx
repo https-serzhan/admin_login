@@ -8,10 +8,11 @@ import { toast } from 'sonner'
 
 type AdminPageProps = {
     user: AuthResponseUser
+    verificationLink: string | null
     onLogout: () => void
 }
 
-export default function AdminPage({user, onLogout}: AdminPageProps) {
+export default function AdminPage({user, verificationLink, onLogout}: AdminPageProps) {
     const queryClient = useQueryClient()
     const [selectedIds, setSelectedIds] = useState<number[]>([])
     const {data, isLoading, error} = useQuery({
@@ -107,6 +108,15 @@ export default function AdminPage({user, onLogout}: AdminPageProps) {
                 <button className="rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-50" onClick={onLogout}>Logout</button>
             </header>
             <main className="mx-auto max-w-7xl rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+            {user.status === 'unverified' && (
+                <div className={`mb-4 rounded-lg border px-4 py-3 text-sm ${verificationLink ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-blue-200 bg-blue-50 text-blue-900'}`}>
+                    <p className="font-medium">{verificationLink ? 'Email delivery failed for this account.' : 'This account is still unverified.'}</p>
+                    <p className="mt-1">{verificationLink ? 'Open the verification link below, then log out and log in again.' : 'Check your inbox and spam folder for the verification email, then log out and log in again.'}</p>
+                    {verificationLink && (
+                        <a className="mt-3 inline-flex rounded-md border border-amber-300 bg-white px-3 py-2 font-semibold text-amber-900 transition hover:bg-amber-100" href={verificationLink} rel="noreferrer" target="_blank">Open verification link</a>
+                    )}
+                </div>
+            )}
             <UsersToolbar selectedCount={selectedIds.length} onBlock={handleBlock}
                           onUnblock={handleUnblock}
                           onDelete={handleDelete}
@@ -123,6 +133,5 @@ export default function AdminPage({user, onLogout}: AdminPageProps) {
         </div>
     )
 }
-
 
 
