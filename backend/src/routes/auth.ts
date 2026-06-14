@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken'
 import {compare, hash} from 'bcrypt'
 import db from "../db/database";
 import crypto from "crypto";
-import {buildVerificationLink, sendVerificationEmail} from '../services/mail'
+import {sendVerificationEmail} from '../services/mail'
 
 type UserStatus = 'unverified' | 'active' | 'blocked'
 interface InsertUser {
@@ -40,8 +40,6 @@ interface AuthResponseUser {
 interface AuthResponse {
     token: string,
     user: AuthResponseUser
-    verificationEmailSent?: boolean
-    verificationLink?: string
 }
 
 const authRouter = Router()
@@ -66,20 +64,10 @@ function buildAuthResponse(user: AuthResponseUser): AuthResponse {
     }
 }
 
-async function trySendVerificationEmail(email: string, token: string) {
-    try {
-        await sendVerificationEmail(email, token)
-        return {
-            verificationEmailSent: true,
-        }
-    }
-    catch(err) {
+function sendVerificationEmailInBackground(email: string, token: string) {
+    sendVerificationEmail(email, token).catch((err) => {
         console.error('Failed to send verification email:', err)
-        return {
-            verificationEmailSent: false,
-            verificationLink: buildVerificationLink(token),
-        }
-    }
+    })
 }
 
 authRouter.post('/register', async (req: Request, res: Response) => {
@@ -107,11 +95,8 @@ authRouter.post('/register', async (req: Request, res: Response) => {
             status: 'unverified',
             last_login_at: null,
         }
-        const emailResult = await trySendVerificationEmail(email, newUser.email_token)
-        return res.status(200).json({
-            ...buildAuthResponse(user),
-            ...emailResult,
-        })
+        sendVerificationEmailInBackground(email, newUser.email_token)
+        return res.status(200).json(buildAuthResponse(user))
     }
     catch(err: any){
         console.error(err)
@@ -143,11 +128,8 @@ authRouter.post('/register', async (req: Request, res: Response) => {
                 last_login_at: existingUser.last_login_at,
             }
 
-            const emailResult = await trySendVerificationEmail(email, emailToken)
-            return res.status(200).json({
-                ...buildAuthResponse(user),
-                ...emailResult,
-            })
+            sendVerificationEmailInBackground(email, emailToken)
+            return res.status(200).json(buildAuthResponse(user))
         }
         return res.status(500).send('Server Error')
     }
