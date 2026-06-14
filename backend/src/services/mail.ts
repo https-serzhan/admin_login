@@ -1,9 +1,3 @@
-import nodemailer from 'nodemailer';
-import dns from 'dns';
-import { isIP } from 'net';
-
-dns.setDefaultResultOrder('ipv4first')
-
 export class MailError extends Error {
     stage: string
     details: Record<string, unknown>
@@ -18,15 +12,13 @@ export class MailError extends Error {
 
 function getErrorDetails(err: unknown) {
     if(err && typeof err === 'object'){
-        const error = err as NodeJS.ErrnoException & {code?: string, command?: string, response?: string, responseCode?: number}
+        const error = err as NodeJS.ErrnoException & {code?: string, cause?: unknown}
 
         return {
             name: error.name,
             message: error.message,
             code: error.code,
-            command: error.command,
-            response: error.response,
-            responseCode: error.responseCode,
+            cause: error.cause,
         }
     }
 
@@ -45,35 +37,31 @@ function getEnvValue(key: string) {
     return value.trim().replace(/^['"]|['"]$/g, '')
 }
 
-function getSmtpConfig() {
-    const smtpHost = getEnvValue('SMTP_HOST')
-    const smtpPort = getEnvValue('SMTP_PORT')
-    const smtpUser = getEnvValue('SMTP_USER')
-    const smtpPass = getEnvValue('SMTP_PASS').replace(/\s/g, '')
+function getResendConfig() {
+    const apiKey = getEnvValue('RESEND_API_KEY')
+    const from = getEnvValue('RESEND_FROM')
     const missingVars = [
-        !smtpHost && 'SMTP_HOST',
-        !smtpPort && 'SMTP_PORT',
-        !smtpUser && 'SMTP_USER',
-        !smtpPass && 'SMTP_PASS',
+        !apiKey && 'RESEND_API_KEY',
+        !from && 'RESEND_FROM',
     ].filter(Boolean)
 
     if (missingVars.length > 0) {
-        throw new MailError(`Missing SMTP env vars: ${missingVars.join(', ')}`, 'config', {
+        throw new MailError(`Missing Resend env vars: ${missingVars.join(', ')}`, 'config', {
+            provider: 'resend',
             missingVars,
         })
     }
 
     return {
-        host: smtpHost,
-        port: Number(smtpPort),
-        secure: getEnvValue('SMTP_SECURE') === 'true',
-        user: smtpUser,
-        pass: smtpPass,
-        from: getEnvValue('SMTP_FROM') || smtpUser,
+        apiKey,
+        from,
+        apiUrl: getEnvValue('RESEND_API_URL') || 'https://api.resend.com/emails',
     }
 }
 
-type SmtpConfig = ReturnType<typeof getSmtpConfig>
+type ResendConfig = ReturnType<typeof getResendConfig>
+
+type ResendResponseBody = Record<string, unknown> | string | null
 
 export function buildVerificationLink(token: string) {
     const appUrl = process.env.APP_URL || 'http://localhost:3001'
@@ -81,154 +69,101 @@ export function buildVerificationLink(token: string) {
     return `${appUrl}/api/auth/verify-email/${token}`
 }
 
-function shouldRetryWithGmailStartTls(smtpConfig: SmtpConfig, err: unknown) {
-    if(!(err instanceof MailError)){
-        return false
-    }
-
-    const errorCode = String(err.details.code || '')
-    const errorMessage = String(err.details.message || '').toLowerCase()
-
-    return smtpConfig.host === 'smtp.gmail.com' &&
-        smtpConfig.port === 465 &&
-        err.stage === 'verify' &&
-        (errorCode === 'ETIMEDOUT' || errorMessage.includes('timeout'))
+function escapeHtml(value: string) {
+    return value.replace(/[&<>"']/g, (character) => {
+        switch(character){
+            case '&':
+                return '&amp;'
+            case '<':
+                return '&lt;'
+            case '>':
+                return '&gt;'
+            case '"':
+                return '&quot;'
+            case "'":
+                return '&#39;'
+            default:
+                return character
+        }
+    })
 }
 
-async function resolveSmtpConnectionHost(host: string) {
-    if(isIP(host)){
-        return host
+async function readResendResponse(response: Response): Promise<ResendResponseBody> {
+    const responseText = await response.text()
+
+    if(!responseText){
+        return null
     }
 
     try {
-        const addresses = await dns.promises.resolve4(host)
-        const connectionHost = addresses[0]
-
-        if(connectionHost){
-            console.log('Resolved SMTP host to IPv4', {
-                host,
-                connectionHost,
-            })
-            return connectionHost
-        }
+        return JSON.parse(responseText) as Record<string, unknown>
     }
-    catch(err) {
-        console.error('SMTP IPv4 lookup failed, falling back to hostname', getErrorDetails(err))
+    catch {
+        return responseText
     }
-
-    return host
 }
 
-async function sendVerificationEmailWithSmtp(smtpConfig: SmtpConfig, to: string, verificationLink: string) {
-    const connectionHost = await resolveSmtpConnectionHost(smtpConfig.host)
-
-    console.log('Preparing verification email', {
+async function sendVerificationEmailWithResend(resendConfig: ResendConfig, to: string, verificationLink: string) {
+    const payload = {
+        from: resendConfig.from,
         to,
-        smtpHost: smtpConfig.host,
-        smtpConnectionHost: connectionHost,
-        smtpPort: smtpConfig.port,
-        smtpSecure: smtpConfig.secure,
-        smtpUser: smtpConfig.user,
-        smtpFrom: smtpConfig.from,
+        subject: 'Verify your email',
+        text: `Verify your email by opening this link: ${verificationLink}`,
+        html: `<p>Verify your email by clicking this link:</p><p><a href="${escapeHtml(verificationLink)}">${escapeHtml(verificationLink)}</a></p>`,
+    }
+
+    console.log('Sending verification email with Resend', {
+        provider: 'resend',
+        to,
+        from: resendConfig.from,
         appUrl: process.env.APP_URL,
     })
-    const transporter = nodemailer.createTransport({
-        host: connectionHost,
-        port: smtpConfig.port,
-        secure: smtpConfig.secure,
-        requireTLS: !smtpConfig.secure,
-        connectionTimeout: 15000,
-        greetingTimeout: 15000,
-        socketTimeout: 20000,
-        auth: {
-            user: smtpConfig.user,
-            pass: smtpConfig.pass,
-        },
-        tls: {
-            servername: smtpConfig.host,
-        },
-    });
+
+    let response: Response
 
     try {
-        console.log('Verifying SMTP connection')
-        await transporter.verify()
-        console.log('SMTP connection verified')
-    }
-    catch(err) {
-        const details = {
-            ...getErrorDetails(err),
-            smtpHost: smtpConfig.host,
-            smtpConnectionHost: connectionHost,
-            smtpPort: smtpConfig.port,
-            smtpSecure: smtpConfig.secure,
-        }
-        console.error('SMTP connection verification failed', details)
-        throw new MailError('SMTP connection failed', 'verify', details)
-    }
-
-    let info
-
-    try {
-        console.log('Sending verification email', {
-            to,
-            from: smtpConfig.from,
-            verificationLink,
+        response = await fetch(resendConfig.apiUrl, {
+            method: 'POST',
+            headers: {
+                Authorization: `Bearer ${resendConfig.apiKey}`,
+                'Content-Type': 'application/json',
+                'User-Agent': 'admin-login/1.0',
+            },
+            body: JSON.stringify(payload),
         })
-        info = await transporter.sendMail({
-            from: smtpConfig.from,
-            to,
-            subject: 'Verify your email',
-            text: `Verify your email by opening this link: ${verificationLink}`,
-            html: `<p>Verify your email by clicking this link:</p><a href="${verificationLink}">${verificationLink}</a>`,
-        });
     }
     catch(err) {
         const details = {
+            provider: 'resend',
             ...getErrorDetails(err),
-            smtpHost: smtpConfig.host,
-            smtpConnectionHost: connectionHost,
-            smtpPort: smtpConfig.port,
-            smtpSecure: smtpConfig.secure,
         }
-        console.error('Verification email send failed', details)
-        throw new MailError('Verification email send failed', 'send', details)
+        console.error('Resend request failed', details)
+        throw new MailError('Resend request failed', 'send', details)
     }
 
-    console.log('Verification email send result', {
-        accepted: info.accepted,
-        rejected: info.rejected,
-        response: info.response,
-        messageId: info.messageId,
+    const responseBody = await readResendResponse(response)
+
+    if(!response.ok){
+        const details = {
+            provider: 'resend',
+            status: response.status,
+            statusText: response.statusText,
+            response: responseBody,
+        }
+        console.error('Resend email send failed', details)
+        throw new MailError('Resend email send failed', 'send', details)
+    }
+
+    console.log('Verification email sent with Resend', {
+        provider: 'resend',
+        status: response.status,
+        response: responseBody,
     })
-
-    if (info.rejected.length > 0) {
-        throw new MailError(`Email rejected for: ${info.rejected.join(', ')}`, 'rejected', {
-            accepted: info.accepted,
-            rejected: info.rejected,
-            response: info.response,
-        })
-    }
 }
 
 export async function sendVerificationEmail(to: string, token: string) {
-    const smtpConfig = getSmtpConfig()
+    const resendConfig = getResendConfig()
     const verificationLink = buildVerificationLink(token)
 
-    try {
-        await sendVerificationEmailWithSmtp(smtpConfig, to, verificationLink)
-    }
-    catch(err) {
-        if(!shouldRetryWithGmailStartTls(smtpConfig, err)){
-            throw err
-        }
-
-        const fallbackConfig = {
-            ...smtpConfig,
-            port: 587,
-            secure: false,
-        }
-
-        console.warn('SMTP 465 timed out, retrying Gmail with STARTTLS on port 587')
-        await sendVerificationEmailWithSmtp(fallbackConfig, to, verificationLink)
-    }
+    await sendVerificationEmailWithResend(resendConfig, to, verificationLink)
 }

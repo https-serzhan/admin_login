@@ -33,14 +33,36 @@ function getApiErrorMessage(data: unknown) {
     if(data && typeof data === 'object' && 'message' in data){
         const errorData = data as {message: unknown, stage?: unknown, details?: unknown}
         const details = errorData.details && typeof errorData.details === 'object'
-            ? errorData.details as {message?: unknown, response?: unknown, code?: unknown, responseCode?: unknown, smtpConnectionHost?: unknown, smtpPort?: unknown}
+            ? errorData.details as {
+                message?: unknown,
+                response?: unknown,
+                code?: unknown,
+                responseCode?: unknown,
+                provider?: unknown,
+                status?: unknown,
+                statusText?: unknown,
+                smtpConnectionHost?: unknown,
+                smtpPort?: unknown
+            }
             : null
-        const detailMessage = details?.response || details?.message || details?.code || details?.responseCode
+        const formatDetail = (value: unknown) => {
+            if(!value){
+                return null
+            }
+            if(typeof value === 'object'){
+                return JSON.stringify(value)
+            }
+            return String(value)
+        }
+        const detailMessage = formatDetail(details?.response || details?.message || details?.code || details?.responseCode)
+        const apiTarget = details?.provider && details?.status
+            ? `${details.provider}: ${details.status}${details.statusText ? ` ${details.statusText}` : ''}`
+            : null
         const smtpTarget = details?.smtpConnectionHost && details?.smtpPort
             ? `target: ${details.smtpConnectionHost}:${details.smtpPort}`
             : null
 
-        return [errorData.message, errorData.stage && `stage: ${errorData.stage}`, detailMessage, smtpTarget]
+        return [errorData.message, errorData.stage && `stage: ${errorData.stage}`, apiTarget, detailMessage, smtpTarget]
             .filter(Boolean)
             .map(String)
             .join(' | ')
@@ -128,5 +150,4 @@ export function deleteUnverifiedUsers() {
         method: 'DELETE',
     })
 }
-
 
