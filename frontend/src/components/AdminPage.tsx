@@ -14,6 +14,7 @@ type AdminPageProps = {
 export default function AdminPage({user, onLogout}: AdminPageProps) {
     const queryClient = useQueryClient()
     const [selectedIds, setSelectedIds] = useState<number[]>([])
+    const [resendError, setResendError] = useState<string | null>(null)
     const {data, isLoading, error} = useQuery({
         queryKey: ["users"],
         queryFn: getUsers,
@@ -51,9 +52,13 @@ export default function AdminPage({user, onLogout}: AdminPageProps) {
     const resendVerificationMutation = useMutation({
         mutationFn: resendVerificationEmail,
         onSuccess: () => {
+            setResendError(null)
             toast.success('Verification email sent')
         },
-        onError: handleMutationError
+        onError: (error) => {
+            setResendError(error.message)
+            handleMutationError(error)
+        }
     })
     function handleBlock() {
         blockMutation.mutate(selectedIds)
@@ -124,6 +129,9 @@ export default function AdminPage({user, onLogout}: AdminPageProps) {
                     <button className="mt-3 rounded-md bg-blue-600 px-3 py-2 font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500" disabled={resendVerificationMutation.isPending} onClick={handleResendVerification}>
                         {resendVerificationMutation.isPending ? 'Sending...' : 'Resend verification email'}
                     </button>
+                    {resendError && (
+                        <p className="mt-3 rounded-md border border-red-200 bg-white px-3 py-2 text-red-700">{resendError}</p>
+                    )}
                 </div>
             )}
             <UsersToolbar selectedCount={selectedIds.length} onBlock={handleBlock}
